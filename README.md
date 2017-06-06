@@ -23,7 +23,9 @@ For importing from older version of portal, the service will need to generate th
 
 ## Client Side Operation Generation
 
-The client will need to construct `transfer` and `update` operations. Because the client will be local JS, this will require implementing the Blockstack line protocol in JS. Shouldn't be too hard.
+The client will need to construct `transfer` and `update` operations. Because the client will be local JS, this will require implementing the Blockstack wire protocol in JS. Shouldn't be too hard.
+
+The wire protocol: https://github.com/blockstack/blockstack-core/wiki/Transaction-Formats
 
 The `update` operation will have to be signed by the new key.
 
