@@ -1,3 +1,7 @@
+# fire up blockstack BLOCKSTACK_TEST_CLIENT_RPC_PORT=6270 blockstack-test-scenario --interactive 2 blockstack_integration_tests.scenarios.rpc_register_multisig
+
+from flask import Flask
+
 from blockstack_client.config import get_utxo_provider_client, APPROX_TX_IN_P2SH_LEN, get_tx_broadcaster
 from blockstack_client.operations import fees_transfer
 from blockstack_client.scripts import tx_make_subsidizable
@@ -40,12 +44,14 @@ def get_wallet():
     }
     return w
 
-def subsidize_tx(serialized_tx):
+def make_subsidized_tx(serialized_tx):
     wallet = get_wallet()
 
     payment_address = str(wallet["payment_address"])
     payment_privkey_info = wallet["payment_privkey"]
 
+    print "subsidizing tx: " + serialized_tx
+    
     utxo_client = get_utxo_provider_client(config_path=config_path)
     
     # estimating tx_fee...
@@ -63,16 +69,20 @@ def subsidize_tx(serialized_tx):
                                          payment_privkey_info,
                                          utxo_client,
                                          tx_fee=tx_fee)
-    
+
+    return subsidized_tx
+
+def do_broadcast(serialized_tx):
     # broadcast it.
     try:
-        resp = broadcast_tx(subsidized_tx, config_path = config_path,
+        resp = broadcast_tx(serialized_tx, config_path = config_path,
                             tx_broadcaster = get_tx_broadcaster(config_path = config_path))
     except Exception as e:
+        print e
         print('Failed to broadcast transaction: {}'.format(
-            json.dumps(deserialize_tx(subsidized_tx), indent=4)))
+            json.dumps(deserialize_tx(serialized_tx), indent=4)))
 
-        print('raw: \n{}'.format(subsidized_tx))
+        print('raw: \n{}'.format(serialized_tx))
         
         return {'error': 'Failed to broadcast transaction (caught exception)'}
 
@@ -81,9 +91,19 @@ def subsidize_tx(serialized_tx):
 
     return resp
 
-if __name__ == "__main__":
-    hex_in = sys.argv[1]
-    subsidized = subsidize_tx(hex_in)
-    print subsidized
+app = Flask(__name__)
 
-    
+@app.route("/subsidized_tx/<rawtx>")
+def get_subsidize_tx(rawtx):
+    subsidized = make_subsidized_tx(str(rawtx))
+
+    return '["' + subsidized + '"]'
+
+@app.route("/broadcast/<rawtx>")
+def broadcast(rawtx):
+    resp = do_broadcast(str(rawtx))
+    return json.dumps(resp)
+
+
+if __name__ == "__main__":
+    app.run()

@@ -3,6 +3,8 @@ var bitcoin = require('bitcoinjs-lib');
 var wif = require('wif');
 
 var coreNode = "https://core.blockstack.org";
+var subsidizer = "http://localhost:5000";
+var bitcoind = "http://blockstack:blockstacksystem@127.0.0.1:18332"
 var network = bitcoin.networks.bitcoin;
 
 var hash128 = function(buff){
@@ -32,13 +34,32 @@ var core_wallet_key_signer = function(wallet){
     return keySigner;
 }
 
+var calculate_change_amount = function(input_tx, cb){
+    putbody = '{"jsonrpc": "1.0", "method": "gettxout", "params": ["' + 
+	input_tx
+	+'", 1] }';
+    request.post({url: bitcoind,
+		  body : putbody},
+		 function (err, resp, body){
+		     if (!err && resp.statusCode == 200) {
+			 value = JSON.parse(body).result.value;
+			 satoshis = parseInt(1e8 * value);
+			 cb(satoshis);
+		     }
+		 })
+}
+
 var get_latest = function(fqa, cb){
-    request(coreNode + "/v1/names/" + fqa,
-	    function (err, resp, body){
-		if (!err && resp.statusCode == 200) {
-		    cb(JSON.parse(body));
-		}
-	    });
+    request(coreNode + "/v1/names/" + fqa, function (err, resp, body){
+	if (!err && resp.statusCode == 200) {
+	    latest = JSON.parse(body);
+	    last_txid = latest.last_txid
+	    calculate_change_amount(last_txid, function(lasttxid_vout){
+		latest.vout = lasttxid_vout;
+		cb(latest);
+	    })
+	}
+    });
 }
 
 var get_consensus = function(cb){
@@ -50,7 +71,7 @@ var get_consensus = function(cb){
 	    });
 }
 
-var make_transfer = function(fqa, consensusHash, newOwner, keySigner, 
+var make_transfer = function(fqa, consensusHash, newOwner,
 			     keepZonefile, cb){
     // Returns a transfer tx skeleton.
     // this is an unsigned serialized transaction.
@@ -75,14 +96,37 @@ var make_transfer = function(fqa, consensusHash, newOwner, keySigner,
     get_latest(fqa, function(latest_info){
 	owner_txid = latest_info.last_txid;
 	owner_addr = latest_info.address;
-	console.log(owner_addr);
 	tx.addInput(owner_txid, 1);
-	tx.addOutput(owner_addr, 5500);
-	keySigner(tx, bitcoin.Transaction.SIGHASH_ANYONECANPAY | bitcoin.Transaction.SIGHASH_SINGLE);
-	cb(tx.build());
+	tx.addOutput(owner_addr, latest_info.vout);
+	cb(tx.buildIncomplete());
     });
 }
 
+var sign_rawtx = function(rawtx, keySigner){
+    var tx_in = bitcoin.Transaction.fromHex(rawtx);
+    var txb = bitcoin.TransactionBuilder.fromTransaction(tx_in, network);
+    txb.inputs[0].prevOutType = undefined;
+    keySigner(txb, bitcoin.Transaction.SIGHASH_ANYONECANPAY | bitcoin.Transaction.SIGHASH_ALL);
+    return txb.build();
+}
+
+var get_subsidy = function(rawtx, cb){
+    request(subsidizer + "/subsidized_tx/" + rawtx,
+	    function (err, resp, body){
+		if (!err && resp.statusCode == 200) {
+		    cb(JSON.parse(body)[0]);
+		}
+	    });
+}
+
+var broadcast = function(rawtx, cb){
+    request(subsidizer + "/broadcast/" + rawtx,
+	    function (err, resp, body){
+		if (!err && resp.statusCode == 200) {
+		    cb(JSON.parse(body));
+		}
+	    });
+}
 
 var generate_regtest_tx = function(){
     var fs = require('fs');
@@ -93,10 +137,15 @@ var generate_regtest_tx = function(){
     get_consensus(function(consensusHash){
 	console.log("consensusHash: " + consensusHash)
 	make_transfer(regtest_data.fqa, consensusHash,
-		      regtest_data.newOwner, keySigner, false,
+		      regtest_data.newOwner, false,
 		      function(tx){
-			  console.log(tx);
-			  console.log(tx.toHex());
+			  console.log("unsigned : " + tx.toHex());
+			  get_subsidy(tx.toHex(), function(tx){
+			      console.log("subsidized : " + tx);
+			      signed_tx = sign_rawtx(tx, keySigner)
+			      console.log("signed : " + signed_tx.toHex());
+			      broadcast(signed_tx.toHex(), console.log);
+			  });
 		      });
     });
 }
