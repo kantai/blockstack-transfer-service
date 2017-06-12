@@ -3,6 +3,7 @@ var bitcoin = require('bitcoinjs-lib');
 var wif = require('wif');
 
 var portal_wallet = require('./portal_wallet');
+var core_wallet = require('./core_wallet');
 var utils = require('./utils');
 
 var coreNode = "https://core.blockstack.org";
@@ -110,11 +111,11 @@ var broadcast = function(rawtx, cb){
 
 var run_regtest_core_test = function(){
     // start test with:
-    // $ BLOCKSTACK_TEST_CLIENT_RPC_PORT=6270 blockstack-test-scenario --interactive 2 blockstack_integration_tests.scenarios.rpc_register_multisig
+    // 
     var fs = require('fs');
     test_data = JSON.parse(fs.readFileSync('client/test_data.json', 'utf8'));
     regtest_data = test_data.core_regtest_info;
-    keySigner = core_wallet_key_signer(regtest_data.wallet);
+    keySigner = core_wallet.makeKeySigner(regtest_data.wallet, network);
 
     get_consensus(function(consensusHash){
 	console.log("consensusHash: " + consensusHash)
@@ -150,11 +151,14 @@ var run_regtest_portal_pre09_test = function(){
     });
 }
 
-coreNode = "http://localhost:6270";
-network = bitcoin.networks.testnet;
 
-// run_regtest_core_test();
-// 
-
-run_regtest_portal_pre09_test();
-
+if (process.argv.length > 2 && process.argv[2].startsWith('test')){
+    coreNode = "http://localhost:6270";
+    network = bitcoin.networks.testnet;
+    var test = process.argv[2].slice(5);
+    if (test == "core-wallet"){
+	run_regtest_core_test();
+    }else if (test == "portal-pre09"){
+	run_regtest_portal_pre09_test();
+    }
+}

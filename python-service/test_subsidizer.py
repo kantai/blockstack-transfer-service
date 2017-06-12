@@ -14,6 +14,7 @@ from blockstack_client.backend.blockchain import get_tx_fee, broadcast_tx
 from blockstack_client.tx import deserialize_tx
 from blockstack_client.proxy import get_default_proxy
 from blockstack_client.rpc import local_api_status
+from blockstack_client.actions import get_wallet_keys
 
 import sys, os, json
 
@@ -45,7 +46,7 @@ def get_wallet_singlesig():
     return w
 
 def make_subsidized_tx(serialized_tx):
-    wallet = get_wallet_singlesig()
+    wallet = get_wallet_keys(config_path=config_path, password=False)
 
     payment_address = str(wallet["payment_address"])
     payment_privkey_info = wallet["payment_privkey"]

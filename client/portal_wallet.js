@@ -19,7 +19,7 @@ function portalGetIdentityKeyPre09(privateKeychain, network){
 
 function getPortalKeySignerPre09(mnemonic, network) {
     if (network == undefined) {
-	network = bitcoin.networks.testnet;
+	network = bitcoin.networks.bitcoin;
     }
     const privateKeychain = keychains.PrivateKeychain.fromMnemonic(mnemonic)
     const identityKey = portalGetIdentityKeyPre09(privateKeychain, network);
