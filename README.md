@@ -68,7 +68,7 @@ installing flask):
 
 ```
 $ source ~/.blockstack-venv/bin/activate
-$ pip install flask
+$ pip install Flask
 $ export BLOCKSTACK_CLIENT_CONFIG=/tmp/blockstack-run-scenario.blockstack_integration_tests.scenarios.rpc_register_multisig/client/client.ini && export BLOCKSTACK_TESTNET=1 && export BLOCKSTACK_DEBUG=1
 $ python python-service/test_subsidizer.py
 ```
@@ -108,7 +108,7 @@ Okay, now, just as above, you'll need to start the test service
 
 ```
 $ source ~/.blockstack-venv/bin/activate
-$ pip install flask
+$ pip install Flask
 $ export BLOCKSTACK_CLIENT_CONFIG=/tmp/blockstack-run-scenario.blockstack_integration_tests.scenarios.portal_test_env/client/client.ini && export BLOCKSTACK_TESTNET=1 && export BLOCKSTACK_DEBUG=1
 $ python python-service/test_subsidizer.py
 ```
