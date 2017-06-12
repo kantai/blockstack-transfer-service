@@ -1,0 +1,12 @@
+{
+  "name": "blockstack-transfer-service",
+  "version": "0.1.0",
+  "author": "Blockstack Inc <admin@blockstack.com>",
+  "description": "The Blockstack browser portal",
+  "license": "MPL-2.0",
+  "dependencies": {
+      "blockstack-keychains": "0.0.8",
+      "bitcoinjs-lib": "https://github.com/shea256/bitcoinjs-lib.git",
+      "request": "^2.79.0"
+  }
+}

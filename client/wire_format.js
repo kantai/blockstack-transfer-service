@@ -2,37 +2,13 @@ var request = require('request');
 var bitcoin = require('bitcoinjs-lib');
 var wif = require('wif');
 
+var portal_wallet = require('./portal_wallet');
+var utils = require('./utils');
+
 var coreNode = "https://core.blockstack.org";
 var subsidizer = "http://localhost:5000";
 var bitcoind = "http://blockstack:blockstacksystem@127.0.0.1:18332"
 var network = bitcoin.networks.bitcoin;
-
-var hash128 = function(buff){
-    var ret = Buffer.from(bitcoin.crypto.sha256(buff).slice(0, 16));
-    return ret;
-}
-
-var hex_to_wif = function(hexStr){
-    b = Buffer.from(hexStr, "hex");
-    return wif.encode(network.wif, b, true);
-}
-
-var core_wallet_key_signer = function(wallet){
-    var keySigner = function(unsigned_tx, sigWhat){
-	ownerPrivKey = wallet.owner_privkey
-	wif1 = hex_to_wif(ownerPrivKey.private_keys[0])
-	wif2 = hex_to_wif(ownerPrivKey.private_keys[1])
-	kp1 = bitcoin.ECPair.fromWIF(wif1, network)
-	kp2 = bitcoin.ECPair.fromWIF(wif2, network)
-	redeemScript = Buffer.from(ownerPrivKey.redeem_script, "hex");
-
-	unsigned_tx.sign(0, kp1, redeemScript,
-			 sigWhat);
-	unsigned_tx.sign(0, kp2, redeemScript,
-			 sigWhat);
-    }
-    return keySigner;
-}
 
 var calculate_change_amount = function(input_tx, cb){
     putbody = '{"jsonrpc": "1.0", "method": "gettxout", "params": ["' + 
@@ -83,11 +59,11 @@ var make_transfer = function(fqa, consensusHash, newOwner,
 	keepChar = '~';
     }
     op_ret.write(keepChar, 3, 1, 'ascii');
-    var hashed = hash128(Buffer.from(fqa, 'ascii'));
+    var hashed = utils.hash128(Buffer.from(fqa, 'ascii'));
     hashed.copy(op_ret, 4)
     op_ret.write(consensusHash, 20, 16, 'hex');
 
-    var op_ret_payload = bitcoin.script.nullData.output.encode(op_ret);
+    var op_ret_payload = bitcoin.script.nullDataOutput(op_ret);
 
     var tx = new bitcoin.TransactionBuilder(network)
 
@@ -115,6 +91,10 @@ var get_subsidy = function(rawtx, cb){
 	    function (err, resp, body){
 		if (!err && resp.statusCode == 200) {
 		    cb(JSON.parse(body)[0]);
+		}else{
+		    console.log(err);
+		    console.log(resp.statusCode);
+		    console.log(body);
 		}
 	    });
 }
@@ -128,7 +108,9 @@ var broadcast = function(rawtx, cb){
 	    });
 }
 
-var generate_regtest_tx = function(){
+var run_regtest_core_test = function(){
+    // start test with:
+    // $ BLOCKSTACK_TEST_CLIENT_RPC_PORT=6270 blockstack-test-scenario --interactive 2 blockstack_integration_tests.scenarios.rpc_register_multisig
     var fs = require('fs');
     test_data = JSON.parse(fs.readFileSync('client/test_data.json', 'utf8'));
     regtest_data = test_data.core_regtest_info;
@@ -136,23 +118,43 @@ var generate_regtest_tx = function(){
 
     get_consensus(function(consensusHash){
 	console.log("consensusHash: " + consensusHash)
-	make_transfer(regtest_data.fqa, consensusHash,
-		      regtest_data.newOwner, false,
-		      function(tx){
-			  console.log("unsigned : " + tx.toHex());
-			  get_subsidy(tx.toHex(), function(tx){
-			      console.log("subsidized : " + tx);
-			      signed_tx = sign_rawtx(tx, keySigner)
-			      console.log("signed : " + signed_tx.toHex());
-			      broadcast(signed_tx.toHex(), console.log);
-			  });
-		      });
+	make_transfer(regtest_data.fqa, consensusHash, regtest_data.newOwner, false, function(tx){
+	    console.log("unsigned : " + tx.toHex());
+	    get_subsidy(tx.toHex(), function(tx){
+		console.log("subsidized : " + tx);
+		signed_tx = sign_rawtx(tx, keySigner)
+		console.log("signed : " + signed_tx.toHex());
+		broadcast(signed_tx.toHex(), console.log);
+	    });
+	});
     });
 }
 
-//keyOwner = bitcoin.ECPair.makeRandom();
+var run_regtest_portal_pre09_test = function(){
+    var fs = require('fs');
+    test_data = JSON.parse(fs.readFileSync('client/test_data.json', 'utf8'));
+    regtest_data = test_data.portal_test_info;
+    keySigner = portal_wallet.getPortalKeySignerPre09(regtest_data.wallet, network);
+
+    get_consensus(function(consensusHash){
+	console.log("consensusHash: " + consensusHash)
+	make_transfer(regtest_data.fqa, consensusHash, regtest_data.newOwner, false, function(tx){
+	    console.log("unsigned : " + tx.toHex());
+	    get_subsidy(tx.toHex(), function(tx){
+		console.log("subsidized : " + tx);
+		signed_tx = sign_rawtx(tx, keySigner)
+		console.log("signed : " + signed_tx.toHex());
+		broadcast(signed_tx.toHex(), console.log);
+	    });
+	});
+    });
+}
 
 coreNode = "http://localhost:6270";
 network = bitcoin.networks.testnet;
 
-generate_regtest_tx();
+// run_regtest_core_test();
+// 
+
+run_regtest_portal_pre09_test();
+
