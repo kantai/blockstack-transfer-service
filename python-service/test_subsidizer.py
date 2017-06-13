@@ -7,18 +7,23 @@
 from flask import Flask
 
 from blockstack_client.config import get_utxo_provider_client, APPROX_TX_IN_P2SH_LEN, get_tx_broadcaster
+from blockstack_client.logger import get_logger
 from blockstack_client.operations import fees_transfer
+from blockstack_client.operations.transfer import build as transfer_build
 from blockstack_client.scripts import tx_make_subsidizable
 from blockstack_client.backend.nameops import estimate_payment_bytes
-from blockstack_client.backend.blockchain import get_tx_fee, broadcast_tx
+from blockstack_client.backend.blockchain import get_tx_fee, broadcast_tx, get_utxos, get_bitcoind_client
 from blockstack_client.tx import deserialize_tx
 from blockstack_client.proxy import get_default_proxy
 from blockstack_client.rpc import local_api_status
 from blockstack_client.actions import get_wallet_keys
+from blockstack_client import get_name_blockchain_record
 
 import sys, os, json
 
 config_path = os.environ.get("BLOCKSTACK_CLIENT_CONFIG")
+
+log = get_logger('blockstack-transfer-service')
 
 def get_wallet_multisig():
     w = {
@@ -51,8 +56,8 @@ def make_subsidized_tx(serialized_tx):
     payment_address = str(wallet["payment_address"])
     payment_privkey_info = wallet["payment_privkey"]
 
-    print "subsidizing tx: " + serialized_tx
-    
+    log.debug("subsidizing tx: {}".format(serialized_tx))
+
     utxo_client = get_utxo_provider_client(config_path=config_path)
     
     # estimating tx_fee...
@@ -64,12 +69,18 @@ def make_subsidized_tx(serialized_tx):
     tx_fee = get_tx_fee(approxed_tx, config_path = config_path)
 
     # make the subsidized tx
-    subsidized_tx = tx_make_subsidizable(serialized_tx,
-                                         fees_transfer,
-                                         500000,
-                                         payment_privkey_info,
-                                         utxo_client,
-                                         tx_fee=tx_fee)
+    try:
+        subsidized_tx = tx_make_subsidizable(serialized_tx,
+                                             fees_transfer,
+                                             45000,
+                                             payment_privkey_info,
+                                             utxo_client,
+                                             tx_fee=tx_fee)
+    except ValueError as value_exc:
+        log.error("Failed to subsidize transaction with exception: {}".format(value_exc))
+        import traceback
+        log.error("Stack trace: {}".format(traceback.format_exc()))
+        return {"error" : "Subsidizer error"}
 
     return subsidized_tx
 
@@ -79,31 +90,87 @@ def do_broadcast(serialized_tx):
         resp = broadcast_tx(serialized_tx, config_path = config_path,
                             tx_broadcaster = get_tx_broadcaster(config_path = config_path))
     except Exception as e:
-        print e
-        print('Failed to broadcast transaction: {}'.format(
+        log.error('Caught exception broadcasting tx: {}'.format(e))
+        log.error('Failed to broadcast transaction: {}'.format(
             json.dumps(deserialize_tx(serialized_tx), indent=4)))
 
-        print('raw: \n{}'.format(serialized_tx))
-        
+        log.error('raw tx: \n{}'.format(serialized_tx))
+
         return {'error': 'Failed to broadcast transaction (caught exception)'}
 
     if 'error' in resp:
-        print('Failed to broadcast transaction: {}'.format(resp['error']))
+        log.error('Failed to broadcast transaction: {}'.format(resp['error']))
 
     return resp
 
 app = Flask(__name__)
 
-@app.route("/subsidized_tx/<rawtx>")
-def get_subsidize_tx(rawtx):
-    subsidized = make_subsidized_tx(str(rawtx))
+OBTUSE_ERR = json.dumps( {"error" : "Server error at subsidizer. Sorry, try again later."} )
 
-    return '["' + subsidized + '"]'
+def test_compatible_opreturns(*args):
+    first = False
+    for opret in args:
+        opret = opret[:6] + opret[8:40]
+        log.debug("Testing: {}".format(opret))
+        if first == False:
+            first = opret
+        else:
+            if first != opret:
+                return False
+    return True
+
+@app.route("/subsidized_tx/<rawtx>/<fqa>")
+def get_subsidize_tx(rawtx, fqa):
+    rawtx = str(rawtx)
+    fqa = str(fqa)
+
+    # add verification step
+    #  -> name to transfer is OWNED by input # 1
+    #               69643e3e7727f568dd9d36d5c777c024da59947300000000000000000000000000000000
+
+    # first -- check that the op-return matches the given fqa
+    expected_hex_opreturn = transfer_build(fqa, True, "00000000000000000000000000000000")
+    deserialized_tx = deserialize_tx(rawtx)
+    actual_hex_opreturn = deserialized_tx[1][0]["script"][4:]
+    log.debug("Expected: {}".format(expected_hex_opreturn))
+    log.debug("Received: {}".format(actual_hex_opreturn))
+
+    if not test_compatible_opreturns(expected_hex_opreturn, actual_hex_opreturn):
+        return OBTUSE_ERR, 403
+
+    # second -- check that input #1 is owned by the name owner, 
+    #           and that the name hasn't been revoked.
+    record = get_name_blockchain_record(fqa)
+    if record.get('revoked', False):
+        return json.dumps({'error' : 'Name revoked'}), 404
+
+    received_input = deserialized_tx[0][0]["outpoint"]
+    actual_txid = received_input["hash"]
+    actual_vout = received_input["index"]
+
+    bitcoind = get_bitcoind_client(config_path = config_path)
+    myview = bitcoind.gettxout(actual_txid, actual_vout)
+    received_owner = myview["scriptPubKey"]["addresses"][0]
+    real_owner = record['address']
+
+    if received_owner != real_owner:
+        log.error("Expected owner {} of {}, but received address {}".format(
+            real_owner, fqa, received_owner))
+        return json.dump({'error' : 'Unexpected input txn which is not the owner of name'}), 403
+
+    subsidized = make_subsidized_tx(rawtx)
+
+    if "error" in subsidized:
+        return OBTUSE_ERR, 503
+    return json.dumps([subsidized]), 200
 
 @app.route("/broadcast/<rawtx>")
 def broadcast(rawtx):
     resp = do_broadcast(str(rawtx))
-    return json.dumps(resp)
+
+    if "error" in resp:
+        return OBTUSE_ERR, 503
+    return json.dumps(resp), 200
 
 
 if __name__ == "__main__":

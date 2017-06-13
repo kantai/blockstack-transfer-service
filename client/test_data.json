@@ -26,7 +26,8 @@
 		  ], 
 		  "redeem_script": "522102d341f728783eb93e6fb5921a1ebe9d149e941de31e403cd69afa2f0f1e698e812102f21b29694df4c2188bee97103d10d017d1865fb40528f25589af9db6e0786b6521028791dc45c049107fb99e673265a38a096536aacdf78aa90710a32fff7750f9f953ae"
 	      }
-	  }
+      },
+      "ownerAddr" : "2N41ZaexX9Jq8DRzdJhSs3CE4DGg7K9GmXn"
     },
     "portal_test_info" :
     { "fqa" : "foo.id",
