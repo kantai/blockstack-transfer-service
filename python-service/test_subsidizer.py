@@ -119,30 +119,12 @@ def test_compatible_opreturns(*args):
                 return False
     return True
 
-@app.route("/subsidized_tx/<rawtx>/<fqa>")
-def get_subsidize_tx(rawtx, fqa):
-    rawtx = str(rawtx)
-    fqa = str(fqa)
-
-    # add verification step
-    #  -> name to transfer is OWNED by input # 1
-    #               69643e3e7727f568dd9d36d5c777c024da59947300000000000000000000000000000000
-
-    # first -- check that the op-return matches the given fqa
-    expected_hex_opreturn = transfer_build(fqa, True, "00000000000000000000000000000000")
-    deserialized_tx = deserialize_tx(rawtx)
-    actual_hex_opreturn = deserialized_tx[1][0]["script"][4:]
-    log.debug("Expected: {}".format(expected_hex_opreturn))
-    log.debug("Received: {}".format(actual_hex_opreturn))
-
-    if not test_compatible_opreturns(expected_hex_opreturn, actual_hex_opreturn):
-        return OBTUSE_ERR, 403
-
-    # second -- check that input #1 is owned by the name owner, 
-    #           and that the name hasn't been revoked.
+def verify_tx_ownership(deserialized_tx, fqa):
+    # check that input #1 is owned by the name owner, 
+    # and that the name hasn't been revoked.
     record = get_name_blockchain_record(fqa)
     if record.get('revoked', False):
-        return json.dumps({'error' : 'Name revoked'}), 404
+        return False, "Name revoked"
 
     received_input = deserialized_tx[0][0]["outpoint"]
     actual_txid = received_input["hash"]
@@ -156,7 +138,36 @@ def get_subsidize_tx(rawtx, fqa):
     if received_owner != real_owner:
         log.error("Expected owner {} of {}, but received address {}".format(
             real_owner, fqa, received_owner))
-        return json.dump({'error' : 'Unexpected input txn which is not the owner of name'}), 403
+        return False, 'Unexpected input txn which is not the owner of name'
+    
+    return True, None
+
+def verify_transfer_valid_format(deserialized_tx, fqa):
+    # check that the op-return matches the given fqa
+
+    expected_hex_opreturn = transfer_build(fqa, True, "00000000000000000000000000000000")
+    actual_hex_opreturn = deserialized_tx[1][0]["script"][4:]
+    log.debug("Expected: {}".format(expected_hex_opreturn))
+    log.debug("Received: {}".format(actual_hex_opreturn))
+
+    if not test_compatible_opreturns(expected_hex_opreturn, actual_hex_opreturn):
+        return False, "OP_RETURN does not match the provided name"
+    return True, None
+
+@app.route("/subsidized_tx/<rawtx>/<fqa>")
+def get_subsidize_tx(rawtx, fqa):
+    rawtx = str(rawtx)
+    fqa = str(fqa)
+
+    deserialized_tx = deserialize_tx(rawtx)
+
+    is_valid, err_msg = verify_transfer_valid_format(deserialized_tx, fqa)
+    if not is_valid:
+        return OBTUSE_ERR, 403
+
+    is_owner_correct, err_msg = verify_tx_ownership(deserialized_tx, fqa)
+    if not is_owner_correct:
+        return json.dumps({'error' : err_msg}), 403
 
     subsidized = make_subsidized_tx(rawtx)
 
