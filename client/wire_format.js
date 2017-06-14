@@ -135,6 +135,15 @@ function get_subsidy(rawtx, fqa, cb){
     });
 }
 
+function get_owned_names(address, cb){
+    request(coreNode + "/v1/addresses/bitcoin/" + address,
+	    function (err, resp, body){
+		if (!err && resp.statusCode == 200) {
+		    cb(JSON.parse(body).names);
+		}
+	    });
+}
+
 function broadcast(rawtx, cb, err_cb){
     request(subsidizer + "/broadcast/" + rawtx, function (err, resp, body){
 	if (!err && resp.statusCode == 200) {
@@ -195,8 +204,17 @@ function run_regtest_core_multi_test(){
     portalData = test_data.portal_test_info;
     portalSigner = portal_wallet.getPortalKeySignerPre09(portalData.wallet, network);
 
-    do_transfer("foo.test", regtest_data.ownerAddr, regtest_data.newOwner, keySigner, false, console.log);
-    do_transfer("bar.test", portalData.ownerAddr, portalData.newOwner, portalSigner, false, console.log);
+    get_owned_names(regtest_data.ownerAddr, function(names){
+	names.forEach(function(name){
+	    do_transfer(name, regtest_data.ownerAddr, regtest_data.newOwner, 
+			keySigner, false, console.log);
+	})});
+
+    get_owned_names(portalData.ownerAddr, function(names){
+	names.forEach(function(name){
+	    do_transfer(name, portalData.ownerAddr, portalData.newOwner, 
+			portalSigner, false, console.log);
+	})});
 }
 
 function run_regtest_portal_pre09_test(){
