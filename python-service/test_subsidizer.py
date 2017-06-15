@@ -8,8 +8,9 @@ from flask import Flask
 
 from blockstack_client.config import get_utxo_provider_client, APPROX_TX_IN_P2SH_LEN, get_tx_broadcaster
 from blockstack_client.logger import get_logger
-from blockstack_client.operations import fees_transfer
+from blockstack_client.operations import fees_transfer, fees_update
 from blockstack_client.operations.transfer import build as transfer_build
+from blockstack_client.operations.update import build as update_build
 from blockstack_client.scripts import tx_make_subsidizable
 from blockstack_client.backend.nameops import estimate_payment_bytes
 from blockstack_client.backend.blockchain import get_tx_fee, broadcast_tx, get_utxos, get_bitcoind_client
@@ -18,6 +19,8 @@ from blockstack_client.proxy import get_default_proxy
 from blockstack_client.rpc import local_api_status
 from blockstack_client.actions import get_wallet_keys
 from blockstack_client import get_name_blockchain_record
+
+from binascii import unhexlify
 
 import sys, os, json
 
@@ -50,7 +53,7 @@ def get_wallet_singlesig():
     }
     return w
 
-def make_subsidized_tx(serialized_tx):
+def make_subsidized_tx(serialized_tx, fees_cb):
     wallet = get_wallet_keys(config_path=config_path, password=False)
 
     payment_address = str(wallet["payment_address"])
@@ -71,7 +74,7 @@ def make_subsidized_tx(serialized_tx):
     # make the subsidized tx
     try:
         subsidized_tx = tx_make_subsidizable(serialized_tx,
-                                             fees_transfer,
+                                             fees_cb,
                                              45000,
                                              payment_privkey_info,
                                              utxo_client,
@@ -154,11 +157,19 @@ def verify_transfer_valid_format(deserialized_tx, fqa):
         return False, "OP_RETURN does not match the provided name"
     return True, None
 
-@app.route("/subsidized_tx/<rawtx>/<fqa>")
-def get_subsidize_tx(rawtx, fqa):
-    rawtx = str(rawtx)
-    fqa = str(fqa)
+def verify_update_valid_format(deserialized_tx, fqa, consensus):
+    # check that the op-return matches the given fqa
 
+    expected_hex_opreturn = update_build(fqa, consensus, data_hash = "0" * (2 * 20))
+    actual_hex_opreturn = deserialized_tx[1][0]["script"][4:]
+    log.debug("Expected: {}".format(expected_hex_opreturn))
+    log.debug("Received: {}".format(actual_hex_opreturn))
+
+    if expected_hex_opreturn[:(19*2)] != actual_hex_opreturn[:(19*2)]:
+        return False, "OP_RETURN does not match the provided name and consensus hash"
+    return True, None
+
+def subsidize_transfer(rawtx, fqa):
     deserialized_tx = deserialize_tx(rawtx)
 
     is_valid, err_msg = verify_transfer_valid_format(deserialized_tx, fqa)
@@ -169,15 +180,55 @@ def get_subsidize_tx(rawtx, fqa):
     if not is_owner_correct:
         return json.dumps({'error' : err_msg}), 403
 
-    subsidized = make_subsidized_tx(rawtx)
+    subsidized = make_subsidized_tx(rawtx, fees_transfer)
 
-    if "error" in subsidized:
+    if not subsidized or "error" in subsidized:
+        log.debug(deserialized_tx)
         return OBTUSE_ERR, 503
     return json.dumps([subsidized]), 200
+
+def subsidize_update(rawtx, fqa, consensus):
+    deserialized_tx = deserialize_tx(rawtx)
+
+    is_valid, err_msg = verify_update_valid_format(deserialized_tx, fqa, consensus)
+    if not is_valid:
+        return OBTUSE_ERR, 403
+
+    is_owner_correct, err_msg = verify_tx_ownership(deserialized_tx, fqa)
+    if not is_owner_correct:
+        return json.dumps({'error' : err_msg}), 403
+
+    subsidized = make_subsidized_tx(rawtx, fees_update)
+
+    if not subsidized or "error" in subsidized:
+        log.debug(deserialized_tx)
+        return OBTUSE_ERR, 503
+    return json.dumps([subsidized]), 200
+
+
+@app.route("/subsidized_tx/<rawtx>/<fqa>/<consensusHash>")
+def get_subsidize_tx(rawtx, fqa, consensusHash):
+    rawtx = str(rawtx)
+    fqa = str(fqa)
+    consensusHash = str(consensusHash)
+
+    deserialized_tx = deserialize_tx(rawtx)
+
+    magic_plus_op = unhexlify(deserialized_tx[1][0]["script"][4:10])
+    if magic_plus_op[:2] != "id":
+        return OBTUSE_ERR, 403
+    if magic_plus_op[2] == ">":
+        return subsidize_transfer(rawtx, fqa)
+    elif magic_plus_op[2] == "+":
+        return subsidize_update(rawtx, fqa, consensusHash)
 
 @app.route("/broadcast/<rawtx>")
 def broadcast(rawtx):
     resp = do_broadcast(str(rawtx))
+
+    from blockstack.lib.operations import op_extract
+    
+#    op = op_extract( opcode, data, senders, inputs, outputs, block_id, vtxindex, txid )
 
     if "error" in resp:
         return OBTUSE_ERR, 503

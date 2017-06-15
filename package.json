@@ -7,6 +7,7 @@
   "dependencies": {
       "blockstack-keychains": "0.0.8",
       "bitcoinjs-lib": "https://github.com/shea256/bitcoinjs-lib.git",
-      "request": "^2.79.0"
+      "request": "^2.79.0",
+      "ripemd160": "2.0.1"
   }
 }
