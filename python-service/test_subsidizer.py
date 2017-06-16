@@ -1,9 +1,24 @@
-# fire up blockstack: 
-# $ BLOCKSTACK_TEST_CLIENT_RPC_PORT=6270 blockstack-test-scenario --interactive 2 blockstack_integration_tests.scenarios.rpc_register_multisig
-# this file should be called after loading the *blockstack venv*
-# and *with* your regtest client config + testnet settings
-# $ export BLOCKSTACK_CLIENT_CONFIG=/tmp/blockstack-run-scenario.blockstack_integration_tests.scenarios.rpc_register_multisig/client/client.ini && export BLOCKSTACK_TESTNET=1
+"""
+    Blockstack-Transfer-Service
+    ~~~~~
 
+    copyright: (c) 2017 by Blockstack.org
+
+    This file is part of Blockstack-Transfer-Service.
+
+    Blockstack-Transfer-Service is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Blockstack-Transfer-Service is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Blockstack-Transfer-Service. If not, see <http://www.gnu.org/licenses/>.
+"""
 from flask import Flask
 
 from blockstack_client.config import get_utxo_provider_client, APPROX_TX_IN_P2SH_LEN, get_tx_broadcaster
