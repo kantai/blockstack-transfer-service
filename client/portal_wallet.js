@@ -20,30 +20,71 @@
 
 var keychains = require('blockstack-keychains');
 var bitcoin = require('bitcoinjs-lib');
-
-function makeKeySigner(identityKey){
-    var keySigner = function(unsignedTX, sigWhat){
-	unsignedTX.sign(0, identityKey, undefined, sigWhat);
-    }
-    return keySigner;
-}
+var bip39 = require('bip39')
 
 // for portal versions before 2038088458012dcff251027ea23a22afce443f3b
-// on main branch, that's commit -- 848d1f5445f01db1e28cde4a52bb3f22e5ca014c
-function portalGetIdentityKeyPre09(privateKeychain, network){
-    const identityKey = privateKeychain.privatelyNamedChild('blockstack-0');
-    const secret = identityKey.ecPair.d; //getPrivateKeyBuffer().toString('hex');
-    //const wif = utils.hex_to_wif(asHexSecret);
-    return new bitcoin.ECPair(secret, false, {"network" : network});
+class IdentityNode{
+    constructor(key){
+        this.key = key
+    }
+    getAddress(){
+        return this.key.getAddress()
+    }
+    getSKHex(){
+        return this.key.keyPair.d.toBuffer(32).toString('hex')
+    }
 }
 
-function getPortalKeySignerPre09(mnemonic, network) {
+function getIdentityNodeFromPhrase(phrase, version = "current"){
+
+}
+
+// on main branch, that's commit -- 848d1f5445f01db1e28cde4a52bb3f22e5ca014c
+function portalGetIdentityKeyPre09(pK, network){
+    const identityKey = pK.privatelyNamedChild('blockstack-0')
+    const secret = identityKey.ecPair.d //getPrivateKeyBuffer().toString('hex');
+    return new bitcoin.ECPair(secret, false, {"network" : network})
+}
+
+function portalGetIdentityKeyPost14(pK, network){
+    //                                                 index ------v
+    return pK.deriveHardened(888).deriveHardened(0).deriveHardened(0)
+}
+
+function portalGetIdentityKey09to14(pK, network){
+    //                                                 index ------v
+    return pK.deriveHardened(888).deriveHardened(0).deriveHardened(0).derive(0)
+}
+
+function getPortalKeyPre09(mnemonic, network) {
     if (network == undefined) {
-	network = bitcoin.networks.bitcoin;
+        network = bitcoin.networks.bitcoin
     }
     const privateKeychain = keychains.PrivateKeychain.fromMnemonic(mnemonic)
-    const identityKey = portalGetIdentityKeyPre09(privateKeychain, network);
-    return makeKeySigner(identityKey);
+    return portalGetIdentityKeyPre09(privateKeychain, network)
 }
 
-exports.getPortalKeySignerPre09 = getPortalKeySignerPre09;
+
+function getPortalKey09to14(mnemonic, network) {
+    if (network == undefined) {
+        network = bitcoin.networks.bitcoin
+    }
+    const seed = bip39.mnemonicToSeed(mnemonic)
+    const masterKeychain = bitcoin.HDNode.fromSeedBuffer(seed)
+    return portalGetIdentityKey09to14(masterKeychain, network)
+}
+
+function getPortalKeyCurrent(mnemonic, network) {
+    if (network == undefined) {
+        network = bitcoin.networks.bitcoin
+    }
+
+    const seed = bip39.mnemonicToSeed(mnemonic)
+    const masterKeychain = bitcoin.HDNode.fromSeedBuffer(seed)
+    return portalGetIdentityKeyPost14(masterKeychain, network)
+}
+
+
+exports.getPortalKeyPre09 = getPortalKeyPre09
+exports.getPortalKey09to14 = getPortalKey09to14
+exports.getPortalKeyCurrent = getPortalKeyCurrent
