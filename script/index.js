@@ -72,6 +72,14 @@ function getIdentityKey09to10(pK, index = 0){
     )
 }
 
+function toAddress(k){
+  return k.key.keyPair.getAddress()
+}
+
+function toPrivkeyHex(k){
+  return k.key.keyPair.d.toHex() + '01'
+}
+
 function getIdentityKeyPre09(mnemonic) {
     // on browser branch, v09 was commit -- 848d1f5445f01db1e28cde4a52bb3f22e5ca014c
     const pK = keychains.PrivateKeychain.fromMnemonic(mnemonic)
@@ -87,4 +95,22 @@ function getMaster(mnemonic) {
     return bitcoin.HDNode.fromSeedBuffer(seed)
 }
 
+function generateTriplet() {
+  const mnemonic = bip39.generateMnemonic()
+  const identity = getIdentityNodeFromPhrase(mnemonic, 'v0.10-current')
+  const addr = toAddress(identity)
+  const privkey = toPrivkeyHex(identity)
+  return {
+    privateKey : privkey,
+    phrase : mnemonic,
+    addr
+  }
+}
+
 exports.getIdentityNodeFromPhrase = getIdentityNodeFromPhrase
+exports.getMaster = getMaster
+exports.getIdentityKeyCurrent = getIdentityKeyCurrent
+exports.toPrivkeyHex = toPrivkeyHex
+exports.toAddress = toAddress
+exports.generateTriplet = generateTriplet
+
