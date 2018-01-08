@@ -37,9 +37,10 @@
   ],
   "homepage": "https://blockstack.org",
   "dependencies": {
+    "bip39": "^2.4.0",
     "bitcoinjs-lib": "^2.3.0",
     "blockstack": "^0.3.0",
-    "bip39": "^2.4.0"
+    "blockstack-keychains": "0.0.8"
   },
   "engines": {
     "node": ">=6",
